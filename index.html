@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Real-Time STT - Deepgram</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 2rem; background: #f8f9fa; }
+    button { font-size: 18px; padding: 10px 20px; margin: 10px; border: none; border-radius: 8px; cursor: pointer; background: #007bff; color: white; }
+    button:disabled { background: gray; }
+    #transcript { margin-top: 20px; padding: 15px; background: #fff; border: 1px solid #ddd; border-radius: 8px; min-height: 100px; max-width: 600px; margin-left: auto; margin-right: auto; text-align: left; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>🎤 Real-Time Speech-to-Text (Deepgram)</h1>
+  <button id="startBtn">Start Live Transcription</button>
+  <button id="stopBtn" disabled>Stop</button>
+  <div id="transcript">Transcript will appear here...</div>
+
+  <script src="script.js"></script>
+</body>
+</html>

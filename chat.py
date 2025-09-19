@@ -1,62 +1,83 @@
-import sounddevice as sd
-from openai import OpenAI
-from scipy.io.wavfile import write
-import keyboard
-import time
-import numpy as np
+import httpx
+import logging
+from deepgram.utils import verboselogs
+import threading
 import os
+
 from dotenv import load_dotenv
-
-# Load API key
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Function to record audio
-def record_audio():
-    print('Press Enter to start recording... ')
-    keyboard.wait('enter')
-    print("Recording... Press Enter again to stop.")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-    start_time = time.time()
-    fs = 44100  # sample rate
-    channels = 1  # use mono to avoid errors
+from deepgram import (
+    DeepgramClient,
+    DeepgramClientOptions,
+    LiveTranscriptionEvents,
+    LiveOptions,
+)
 
-    # record with float32 dtype
-    recording = sd.rec(int(fs * 300), samplerate=fs, channels=channels, dtype="float32")
+# URL for the realtime streaming audio you would like to transcribe
+URL = ""
 
-    keyboard.wait("enter")
-    print("Stopping...")
-    sd.stop()
+def main():
+    try:
+        # use default config
+        deepgram: DeepgramClient = DeepgramClient(DEEPGRAM_API_KEY)
 
-    # duration
-    duration = time.time() - start_time
+        # Create a websocket connection to Deepgram
+        dg_connection = deepgram.listen.websocket.v("1")
 
-    # convert float32 → int16
-    recording = np.int16(recording * 32767)
+        def on_message(self, result, **kwargs):
+            sentence = result.channel.alternatives[0].transcript
+            if len(sentence) == 0:
+                return
+            print(f"speaker: {sentence}")
 
-    # save wav
-    write("output.wav", fs, recording[:int(duration * fs)])
-    print(f"Saved recording. Duration: {duration:.2f} seconds")
-    print("File size:", os.path.getsize("output.wav"), "bytes")
+        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
 
-# Function to transcribe audio
-def speech_to_text():
-    with open("output.wav", "rb") as audio_file:
-        transcription = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",  # try "whisper-1" if empty
-            file=audio_file
-        )
-    print("RAW RESPONSE:", transcription)  # debug
-    return getattr(transcription, "text", None)
+        # connect to websocket
+        options = LiveOptions(model="nova-3")
 
-# Loop to record and transcribe
-def transcribe():
-    while True:
-        record_audio()
-        output = speech_to_text()
-        print("\n--- TRANSCRIPTION ---")
-        print(output if output else "No text returned.")
-        print("---------------------\n")
+        print("\n\nPress Enter to stop recording...\n\n")
+        if dg_connection.start(options) is False:
+            print("Failed to start connection")
+            return
+
+        lock_exit = threading.Lock()
+        exit = False
+
+        # define a worker thread
+        def myThread():
+            with httpx.stream("GET", URL) as r:
+                for data in r.iter_bytes():
+                    lock_exit.acquire()
+                    if exit:
+                        break
+                    lock_exit.release()
+
+                    dg_connection.send(data)
+
+        # start the worker thread
+        myHttp = threading.Thread(target=myThread)
+        myHttp.start()
+
+        # signal finished
+        input("")
+        lock_exit.acquire()
+        exit = True
+        lock_exit.release()
+
+        # Wait for the HTTP thread to close and join
+        myHttp.join()
+
+        # Indicate that we've finished
+        dg_connection.finish()
+
+        print("Finished")
+
+    except Exception as e:
+        print(f"Could not open socket: {e}")
+        return
 
 if __name__ == "__main__":
-    transcribe()
+    main()
